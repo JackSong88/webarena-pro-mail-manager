@@ -18,13 +18,13 @@ DBNAME=mailcow
 DBUSER=mailcow
 
 # Please use long, random alphanumeric strings (A-Za-z0-9)
-DBPASS=kBQfC3Crmp48H9cjlArHkr7kketO
-DBROOT=lG9TlnvjMBsQrTiNsP5HOSh9j39F
+DBPASS=n9Kkq4906oOgAqFf7OP0Q45DJloX
+DBROOT=dYG48xuCH5pFTGYGD1PgPMFh3fwk
 
 # ------------------------------
 # REDIS configuration
 # ------------------------------
-REDISPASS=FW7piCfr3C9fwh4dR3tsZPTwvUmZ
+REDISPASS=RGJyILb3mFFG0KuIuLMNA7wdvi1D
 
 # ------------------------------
 # HTTP/S Bindings
@@ -239,7 +239,7 @@ SOGO_EXPIRE_SESSION=480
 
 # SOGo URL encryption key (exactly 16 characters, limited to A–Z, a–z, 0–9)
 # This key is used to encrypt email addresses within SOGo URLs
-SOGO_URL_ENCRYPTION_KEY=j55JYE3SVdft4Jkb
+SOGO_URL_ENCRYPTION_KEY=LesYUk2lMtzVekUC
 
 # DOVECOT_MASTER_USER and DOVECOT_MASTER_PASS must both be provided. No special chars.
 # Empty by default to auto-generate master user and password on start.
