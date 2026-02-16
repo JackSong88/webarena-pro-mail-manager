@@ -4,7 +4,7 @@ Due to sync and how `Mailcow` is implemented, there are a few extra steps to loa
 ### 1) Clone the repositories
 - git clone this repository and a specific version of the original mailcow docker repository (bug with restoring with their latest version):
 ```
-git clone https://github.com/JackSong88/webarena-jbb-mailcow.git
+git clone https://github.com/JackSong88/webarena-pro-mail-manager.git
 git clone --depth 1 --branch 2025-10a https://github.com/mailcow/mailcow-dockerized.git mailcow-2025-10a
 ```
 - Some setups may face a `error: pathspec 'master' did not match any file(s) known to git` error, which can be fixed by:
@@ -32,8 +32,8 @@ sudo chown -R "$USER:$USER" .
 - From our repo, copy the `mailcow.conf` config and `backups/` folder which contains all the domains, user emails, and data from this repository to the empty, newly cloned one.
 ```
 cd <project_root_dir>
-cp -r webarena-jbb-mailcow/mailcow.conf mailcow-2025-10a
-cp -r webarena-jbb-mailcow/backups mailcow-2025-10a
+cp -r webarena-pro-mail-manager/mailcow.conf mailcow-2025-10a
+cp -r webarena-pro-mail-manager/backups mailcow-2025-10a
 ```
 
 ### 3) Compose images and data
