@@ -198,5 +198,5 @@ postscreen_dnsbl_sites = wl.mailspike.net=127.0.0.[18;19;20]*-2
   zen.spamhaus.org=127.0.0.2*3
 
 # User Overrides
-myhostname = mail.local.test
+myhostname = local.test
 

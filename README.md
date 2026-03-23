@@ -11,9 +11,9 @@ cd webarena-pro-mail-manager
 ```
 
 ### 2) Add the local hostname
-If you are running locally, point `mail.local.test` at `127.0.0.1`:
+If you are running locally, point `local.test` at `127.0.0.1`:
 ```
-sudo sh -c 'echo "127.0.0.1 mail.local.test" >> /etc/hosts'
+sudo sh -c 'echo "127.0.0.1 local.test" >> /etc/hosts'
 ```
 
 ### 3) Start the stack
@@ -52,7 +52,7 @@ Because the restore marker lives in a Docker volume, removing volumes with `down
 ### 5) Login
 - Login to a user email using their email and password (all are set to `abc123`)
 - Mailboxes/Emails and Mail Domains can be found in the admin menu. To login as admin:
-  - Either navigate through the `Log in as admin` button or go to `https://mail.local.test/admin/`
+  - Either navigate through the `Log in as admin` button or go to `https://local.test/admin/`
   - Then, for the username and password, enter:
   ```
   Username: admin
