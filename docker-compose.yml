@@ -1,9 +1,47 @@
+name: ${COMPOSE_PROJECT_NAME:-mailcowdockerized}
+
 services:
+
+    mailcow-local-seed:
+      image: ghcr.io/mailcow/acme:1.94
+      user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+      entrypoint: ["/bin/bash", "/bootstrap/bootstrap-mailcow.sh"]
+      environment:
+        - MAILCOW_BOOTSTRAP_MODE=local-seed
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
+      restart: "no"
+      volumes:
+        - ./:/workspace/repo:Z
+        - ./helper-scripts/bootstrap-mailcow.sh:/bootstrap/bootstrap-mailcow.sh:ro,Z
+
+    mailcow-bootstrap:
+      image: ghcr.io/mailcow/acme:1.94
+      entrypoint: ["/bin/bash", "/bootstrap/bootstrap-mailcow.sh"]
+      depends_on:
+        mailcow-local-seed:
+          condition: service_completed_successfully
+      environment:
+        - MAILCOW_BOOTSTRAP_MODE=restore
+        - MAILCOW_BOOTSTRAP_BACKUP=${MAILCOW_BOOTSTRAP_BACKUP:-mailcow-2026-01-14-19-30-31}
+        - MAILCOW_BOOTSTRAP_FORCE=${MAILCOW_BOOTSTRAP_FORCE:-n}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
+      restart: "no"
+      volumes:
+        - ./:/workspace/repo:Z
+        - ./helper-scripts/bootstrap-mailcow.sh:/bootstrap/bootstrap-mailcow.sh:ro,Z
+        - ./backups:/backups:ro,Z
+        - mysql-vol-1:/bootstrap/mysql
+        - redis-vol-1:/bootstrap/redis
+        - rspamd-vol-1:/bootstrap/rspamd
+        - postfix-vol-1:/bootstrap/postfix
+        - vmail-vol-1:/bootstrap/vmail
+        - crypt-vol-1:/bootstrap/crypt
+        - mailcow-bootstrap-vol-1:/bootstrap/state
 
     unbound-mailcow:
       image: ghcr.io/mailcow/unbound:1.24
       environment:
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - SKIP_UNBOUND_HEALTHCHECK=${SKIP_UNBOUND_HEALTHCHECK:-n}
       volumes:
         - ./data/hooks/unbound:/hooks:Z
@@ -19,19 +57,23 @@ services:
     mysql-mailcow:
       image: mariadb:10.11
       depends_on:
-        - unbound-mailcow
-        - netfilter-mailcow
+        mailcow-bootstrap:
+          condition: service_completed_successfully
+        unbound-mailcow:
+          condition: service_started
+        netfilter-mailcow:
+          condition: service_started
       stop_grace_period: 45s
       volumes:
         - mysql-vol-1:/var/lib/mysql/
         - mysql-socket-vol-1:/var/run/mysqld/:z
         - ./data/conf/mysql/:/etc/mysql/conf.d/:ro,Z
       environment:
-        - TZ=${TZ}
-        - MYSQL_ROOT_PASSWORD=${DBROOT}
-        - MYSQL_DATABASE=${DBNAME}
-        - MYSQL_USER=${DBUSER}
-        - MYSQL_PASSWORD=${DBPASS}
+        - TZ=${TZ:-America/Toronto}
+        - MYSQL_ROOT_PASSWORD=${DBROOT:-0aONp8KOnDQJ1kSk2nqL2qUbHMF9}
+        - MYSQL_DATABASE=${DBNAME:-mailcow}
+        - MYSQL_USER=${DBUSER:-mailcow}
+        - MYSQL_PASSWORD=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
         - MYSQL_INITDB_SKIP_TZINFO=1
       restart: always
       ports:
@@ -49,12 +91,15 @@ services:
         - ./data/conf/redis/redis-conf.sh:/redis-conf.sh:z
       restart: always
       depends_on:
-        - netfilter-mailcow
+        mailcow-bootstrap:
+          condition: service_completed_successfully
+        netfilter-mailcow:
+          condition: service_started
       ports:
         - "${REDIS_PORT:-127.0.0.1:7654}:6379"
       environment:
-        - TZ=${TZ}
-        - REDISPASS=${REDISPASS}
+        - TZ=${TZ:-America/Toronto}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - REDISMASTERPASS=${REDISMASTERPASS:-}
       sysctls:
         - net.core.somaxconn=4096
@@ -73,7 +118,7 @@ services:
       dns:
         - ${IPV4_NETWORK:-172.22.1}.254
       environment:
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - SKIP_CLAMD=${SKIP_CLAMD:-n}
       volumes:
         - ./data/conf/clamav/:/etc/clamav/:Z
@@ -90,12 +135,12 @@ services:
         - dovecot-mailcow
         - clamd-mailcow
       environment:
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - IPV4_NETWORK=${IPV4_NETWORK:-172.22.1}
         - IPV6_NETWORK=${IPV6_NETWORK:-fd4d:6169:6c63:6f77::/64}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - SPAMHAUS_DQS_KEY=${SPAMHAUS_DQS_KEY:-}
       volumes:
         - ./data/hooks/rspamd:/hooks:Z
@@ -118,7 +163,7 @@ services:
 
     php-fpm-mailcow:
       image: ghcr.io/mailcow/phpfpm:1.94
-      command: "php-fpm -d date.timezone=${TZ} -d expose_php=0"
+      command: "php-fpm -d date.timezone=${TZ:-America/Toronto} -d expose_php=0"
       depends_on:
         - redis-mailcow
       volumes:
@@ -152,13 +197,13 @@ services:
       environment:
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - LOG_LINES=${LOG_LINES:-9999}
-        - TZ=${TZ}
-        - DBNAME=${DBNAME}
-        - DBUSER=${DBUSER}
-        - DBPASS=${DBPASS}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
+        - TZ=${TZ:-America/Toronto}
+        - DBNAME=${DBNAME:-mailcow}
+        - DBUSER=${DBUSER:-mailcow}
+        - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
         - MAILCOW_PASS_SCHEME=${MAILCOW_PASS_SCHEME:-BLF-CRYPT}
         - IMAP_PORT=${IMAP_PORT:-143}
         - IMAPS_PORT=${IMAPS_PORT:-993}
@@ -173,7 +218,7 @@ services:
         - API_KEY=${API_KEY:-invalid}
         - API_KEY_READ_ONLY=${API_KEY_READ_ONLY:-invalid}
         - API_ALLOW_FROM=${API_ALLOW_FROM:-invalid}
-        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcow-dockerized}
+        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
         - SKIP_FTS=${SKIP_FTS:-y}
         - SKIP_CLAMD=${SKIP_CLAMD:-n}
         - SKIP_OLEFY=${SKIP_OLEFY:-n}
@@ -201,13 +246,16 @@ services:
 
     sogo-mailcow:
       image: ghcr.io/mailcow/sogo:1.136
+      depends_on:
+        mailcow-bootstrap:
+          condition: service_completed_successfully
       environment:
-        - DBNAME=${DBNAME}
-        - DBUSER=${DBUSER}
-        - DBPASS=${DBPASS}
-        - TZ=${TZ}
+        - DBNAME=${DBNAME:-mailcow}
+        - DBUSER=${DBUSER:-mailcow}
+        - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
+        - TZ=${TZ:-America/Toronto}
         - LOG_LINES=${LOG_LINES:-9999}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
         - MAILCOW_PASS_SCHEME=${MAILCOW_PASS_SCHEME:-BLF-CRYPT}
         - ACL_ANYONE=${ACL_ANYONE:-disallow}
         - ALLOW_ADMIN_EMAIL_LOGIN=${ALLOW_ADMIN_EMAIL_LOGIN:-n}
@@ -218,7 +266,7 @@ services:
         - MASTER=${MASTER:-y}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
       dns:
         - ${IPV4_NETWORK:-172.22.1}.254
       volumes:
@@ -280,11 +328,11 @@ services:
         - MAILCOW_REPLICA_IP=${MAILCOW_REPLICA_IP:-}
         - DOVEADM_REPLICA_PORT=${DOVEADM_REPLICA_PORT:-}
         - LOG_LINES=${LOG_LINES:-9999}
-        - DBNAME=${DBNAME}
-        - DBUSER=${DBUSER}
-        - DBPASS=${DBPASS}
-        - TZ=${TZ}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
+        - DBNAME=${DBNAME:-mailcow}
+        - DBUSER=${DBUSER:-mailcow}
+        - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
+        - TZ=${TZ:-America/Toronto}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
         - MAILCOW_PASS_SCHEME=${MAILCOW_PASS_SCHEME:-BLF-CRYPT}
         - IPV4_NETWORK=${IPV4_NETWORK:-172.22.1}
         - ALLOW_ADMIN_EMAIL_LOGIN=${ALLOW_ADMIN_EMAIL_LOGIN:-n}
@@ -297,8 +345,8 @@ services:
         - MASTER=${MASTER:-y}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
-        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcow-dockerized}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
+        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
       ports:
         - "${DOVEADM_PORT:-127.0.0.1:19991}:12345"
         - "${IMAP_PORT:-143}:143"
@@ -357,14 +405,14 @@ services:
         - mysql-socket-vol-1:/var/run/mysqld/:z
       environment:
         - LOG_LINES=${LOG_LINES:-9999}
-        - TZ=${TZ}
-        - DBNAME=${DBNAME}
-        - DBUSER=${DBUSER}
-        - DBPASS=${DBPASS}
+        - TZ=${TZ:-America/Toronto}
+        - DBNAME=${DBNAME:-mailcow}
+        - DBUSER=${DBUSER:-mailcow}
+        - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
         - SPAMHAUS_DQS_KEY=${SPAMHAUS_DQS_KEY:-}
       cap_add:
         - NET_BIND_SERVICE
@@ -390,10 +438,10 @@ services:
         - postfix-tlspol-vol-1:/var/lib/postfix-tlspol
       environment:
         - LOG_LINES=${LOG_LINES:-9999}
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - DEV_MODE=${DEV_MODE:-n}
       restart: always
       dns:
@@ -407,7 +455,7 @@ services:
       image: memcached:alpine
       restart: always
       environment:
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
       networks:
         mailcow-network:
           aliases:
@@ -425,9 +473,9 @@ services:
       environment:
         - HTTPS_PORT=${HTTPS_PORT:-443}
         - HTTP_PORT=${HTTP_PORT:-80}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
         - ADDITIONAL_SERVER_NAMES=${ADDITIONAL_SERVER_NAMES:-}
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - SKIP_SOGO=${SKIP_SOGO:-n}
         - SKIP_RSPAMD=${SKIP_RSPAMD:-n}
         - ENABLE_IPV6=${ENABLE_IPV6:-true}
@@ -461,6 +509,8 @@ services:
 
     acme-mailcow:
       depends_on:
+        mailcow-bootstrap:
+          condition: service_completed_successfully
         nginx-mailcow:
           condition: service_started
         unbound-mailcow:
@@ -470,24 +520,24 @@ services:
         - ${IPV4_NETWORK:-172.22.1}.254
       environment:
         - LOG_LINES=${LOG_LINES:-9999}
-        - ADDITIONAL_SAN=${ADDITIONAL_SAN}
+        - ADDITIONAL_SAN=${ADDITIONAL_SAN:-}
         - AUTODISCOVER_SAN=${AUTODISCOVER_SAN:-y}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
-        - DBNAME=${DBNAME}
-        - DBUSER=${DBUSER}
-        - DBPASS=${DBPASS}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
+        - DBNAME=${DBNAME:-mailcow}
+        - DBUSER=${DBUSER:-mailcow}
+        - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
         - SKIP_LETS_ENCRYPT=${SKIP_LETS_ENCRYPT:-n}
-        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcow-dockerized}
+        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
         - DIRECTORY_URL=${DIRECTORY_URL:-}
         - ENABLE_SSL_SNI=${ENABLE_SSL_SNI:-n}
         - SKIP_IP_CHECK=${SKIP_IP_CHECK:-n}
         - SKIP_HTTP_VERIFICATION=${SKIP_HTTP_VERIFICATION:-n}
         - ONLY_MAILCOW_HOSTNAME=${ONLY_MAILCOW_HOSTNAME:-n}
         - LE_STAGING=${LE_STAGING:-n}
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - SNAT_TO_SOURCE=${SNAT_TO_SOURCE:-n}
         - SNAT6_TO_SOURCE=${SNAT6_TO_SOURCE:-n}
       volumes:
@@ -507,14 +557,14 @@ services:
       restart: always
       privileged: true
       environment:
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - IPV4_NETWORK=${IPV4_NETWORK:-172.22.1}
         - IPV6_NETWORK=${IPV6_NETWORK:-fd4d:6169:6c63:6f77::/64}
         - SNAT_TO_SOURCE=${SNAT_TO_SOURCE:-n}
         - SNAT6_TO_SOURCE=${SNAT6_TO_SOURCE:-n}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - MAILCOW_REPLICA_IP=${MAILCOW_REPLICA_IP:-}
         - DISABLE_NETFILTER_ISOLATION_RULE=${DISABLE_NETFILTER_ISOLATION_RULE:-n}
       network_mode: "host"
@@ -542,11 +592,11 @@ services:
       environment:
         - IPV6_NETWORK=${IPV6_NETWORK:-fd4d:6169:6c63:6f77::/64}
         - LOG_LINES=${LOG_LINES:-9999}
-        - TZ=${TZ}
-        - DBNAME=${DBNAME}
-        - DBUSER=${DBUSER}
-        - DBPASS=${DBPASS}
-        - DBROOT=${DBROOT}
+        - TZ=${TZ:-America/Toronto}
+        - DBNAME=${DBNAME:-mailcow}
+        - DBUSER=${DBUSER:-mailcow}
+        - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
+        - DBROOT=${DBROOT:-0aONp8KOnDQJ1kSk2nqL2qUbHMF9}
         - USE_WATCHDOG=${USE_WATCHDOG:-n}
         - WATCHDOG_NOTIFY_EMAIL=${WATCHDOG_NOTIFY_EMAIL:-}
         - WATCHDOG_NOTIFY_BAN=${WATCHDOG_NOTIFY_BAN:-y}
@@ -557,8 +607,8 @@ services:
         - WATCHDOG_EXTERNAL_CHECKS=${WATCHDOG_EXTERNAL_CHECKS:-n}
         - WATCHDOG_MYSQL_REPLICATION_CHECKS=${WATCHDOG_MYSQL_REPLICATION_CHECKS:-n}
         - WATCHDOG_VERBOSE=${WATCHDOG_VERBOSE:-n}
-        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME}
-        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcow-dockerized}
+        - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-mail.local.test}
+        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
         - IPV4_NETWORK=${IPV4_NETWORK:-172.22.1}
         - IP_BY_DOCKER_API=${IP_BY_DOCKER_API:-0}
         - CHECK_UNBOUND=${CHECK_UNBOUND:-1}
@@ -569,7 +619,7 @@ services:
         - HTTPS_PORT=${HTTPS_PORT:-443}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
         - EXTERNAL_CHECKS_THRESHOLD=${EXTERNAL_CHECKS_THRESHOLD:-1}
         - NGINX_THRESHOLD=${NGINX_THRESHOLD:-5}
         - UNBOUND_THRESHOLD=${UNBOUND_THRESHOLD:-5}
@@ -598,17 +648,22 @@ services:
 
     dockerapi-mailcow:
       image: ghcr.io/mailcow/dockerapi:2.11
+      depends_on:
+        mailcow-bootstrap:
+          condition: service_completed_successfully
+        redis-mailcow:
+          condition: service_started
       security_opt:
         - label=disable
       restart: always
       dns:
         - ${IPV4_NETWORK:-172.22.1}.254
       environment:
-        - DBROOT=${DBROOT}
-        - TZ=${TZ}
+        - DBROOT=${DBROOT:-0aONp8KOnDQJ1kSk2nqL2qUbHMF9}
+        - TZ=${TZ:-America/Toronto}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
-        - REDISPASS=${REDISPASS}
+        - REDISPASS=${REDISPASS:-d8Tpd9szEeBlGWWxXUA20cyTjMhD}
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock:ro
       networks:
@@ -620,7 +675,7 @@ services:
       image: ghcr.io/mailcow/olefy:1.15
       restart: always
       environment:
-        - TZ=${TZ}
+        - TZ=${TZ:-America/Toronto}
         - OLEFY_BINDADDRESS=0.0.0.0
         - OLEFY_BINDPORT=10055
         - OLEFY_TMPDIR=/tmp
@@ -638,10 +693,10 @@ services:
     ofelia-mailcow:
       image: mcuadros/ofelia:latest
       restart: always
-      command: daemon --docker -f label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}
+      command: daemon --docker -f label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
       environment:
-        - TZ=${TZ}
-        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
+        - TZ=${TZ:-America/Toronto}
+        - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
       depends_on:
         - sogo-mailcow
         - dovecot-mailcow
@@ -681,3 +736,4 @@ volumes:
   sogo-web-vol-1:
   sogo-userdata-backup-vol-1:
   clamd-db-vol-1:
+  mailcow-bootstrap-vol-1:

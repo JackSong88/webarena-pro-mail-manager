@@ -4,12 +4,16 @@
 !/**/.gitkeep
 *.iml
 .idea
+.env
 .vscode/*
 data/assets/ssl-example/*
 data/assets/ssl/*
+!data/assets/ssl-example/.gitkeep
+!data/assets/ssl/.gitkeep
 data/conf/borgmatic/
 data/conf/clamav/whitelist.ign2
 data/conf/dovecot/acl_anyone
+data/conf/dovecot/auth/passwd-verify.lua
 data/conf/dovecot/dovecot-master.passwd
 data/conf/dovecot/dovecot-master.userdb
 data/conf/dovecot/extra.conf
@@ -22,7 +26,8 @@ data/conf/dovecot/shared_namespace.conf
 data/conf/dovecot/sni.conf
 data/conf/dovecot/sogo-sso.conf
 data/conf/dovecot/sogo_trusted_ip.conf
-data/conf/dovecot/sql
+data/conf/dovecot/sql/*
+!data/conf/dovecot/sql/.gitkeep
 data/conf/dovecot/conf.d/fts.conf
 data/conf/nextcloud-*.bak
 data/conf/nginx/*.active
@@ -37,7 +42,8 @@ data/conf/postfix/custom_transport.pcre
 data/conf/postfix/extra.cf
 data/conf/postfix/sni.map
 data/conf/postfix/sni.map.db
-data/conf/postfix/sql
+data/conf/postfix/sql/*
+!data/conf/postfix/sql/.gitkeep
 data/conf/postfix/dns_blocklists.cf
 data/conf/postfix/dnsbl_reply.map
 data/conf/rspamd/custom/*
@@ -62,6 +68,9 @@ data/hooks/unbound/*
 data/web/templates/cache/*
 !data/web/templates/cache/.gitkeep
 data/web/.well-known/acme-challenge
+!data/web/.well-known/
+!data/web/.well-known/acme-challenge/
+!data/web/.well-known/acme-challenge/.gitkeep
 data/web/css/build/0081-custom-mailcow.css
 data/web/inc/vars.local.inc.php
 data/web/inc/app_info.inc.php
@@ -77,4 +86,4 @@ create_cold_standby.sh
 !data/conf/nginx/mailcow_auth.conf
 data/conf/postfix/postfix-tlspol
 
-!backups/*/*.conf
+backups/*/*.conf
