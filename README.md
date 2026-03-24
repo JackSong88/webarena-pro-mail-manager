@@ -54,6 +54,12 @@ Because the restore marker lives in a Docker volume, removing volumes with `down
 
 ### 5) Login
 - Login to a user email using their email and password (all are set to `abc123`)
+- Demo mailbox accounts you can use right away:
+  - `amy@mcgill.ca`
+  - `baichen@mcgill.ca`
+  - `emily@abc.ca`
+  - `jack@abc.ca`
+  - `wilbur@abc.ca`
 - Mailboxes/Emails and Mail Domains can be found in the admin menu. To login as admin:
   - Either navigate through the `Log in as admin` button or go to `https://local.test/admin/`
   - Then, for the username and password, enter:
