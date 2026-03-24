@@ -3,6 +3,12 @@
 # Ensure the script is run from the directory that contains a link of .env
 # Resolve the directory this script lives in for consistent behavior when invoked from elsewhere
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
+AUTO_CONFIG="${MAILCOW_AUTO_CONFIG:-n}"
+
+if [[ "${AUTO_CONFIG}" == "y" ]]; then
+  cd "${SCRIPT_DIR}"
+  ln -sfn mailcow.conf .env
+fi
 
 # Ensure script is executed in the mailcow installation directory by checking for a .env symlink that points to mailcow.conf
 if [ ! -L "${PWD}/.env" ]; then
@@ -27,17 +33,21 @@ source _modules/scripts/ipv6_controller.sh
 
 set -o pipefail
 
-get_installed_tools
-get_docker_version
+if [[ "${AUTO_CONFIG}" != "y" ]]; then
+  get_installed_tools
+  get_docker_version
 
-if [[ $docker_version -lt 24 ]]; then
-  echo -e "\e[31mCannot find Docker with a Version higher or equals 24.0.0\e[0m"
-  echo -e "\e[33mmailcow needs a newer Docker version to work properly...\e[0m"
-  echo -e "\e[31mPlease update your Docker installation... exiting\e[0m"
-  exit 1
+  if [[ $docker_version -lt 24 ]]; then
+    echo -e "\e[31mCannot find Docker with a Version higher or equals 24.0.0\e[0m"
+    echo -e "\e[33mmailcow needs a newer Docker version to work properly...\e[0m"
+    echo -e "\e[31mPlease update your Docker installation... exiting\e[0m"
+    exit 1
+  fi
+
+  detect_bad_asn
+else
+  COMPOSE_VERSION=${DOCKER_COMPOSE_VERSION:-native}
 fi
-
-detect_bad_asn
 
 ### If generate_config.sh is started with --dev or -d it will not check out nightly or master branch and will keep on the current branch
 if [[ ${1} == "--dev" || ${1} == "-d" ]]; then
@@ -47,20 +57,29 @@ else
 fi
 
 if [ -f mailcow.conf ]; then
-  read -r -p "A config file exists and will be overwritten, are you sure you want to continue? [y/N] " response
-  case $response in
-    [yY][eE][sS]|[yY])
-      mv mailcow.conf mailcow.conf_backup
-      chmod 600 mailcow.conf_backup
+  if [[ "${AUTO_CONFIG}" == "y" ]]; then
+    cp -f mailcow.conf mailcow.conf_backup 2>/dev/null || true
+    chmod 600 mailcow.conf_backup 2>/dev/null || true
+  else
+    read -r -p "A config file exists and will be overwritten, are you sure you want to continue? [y/N] " response
+    case $response in
+      [yY][eE][sS]|[yY])
+        mv mailcow.conf mailcow.conf_backup
+        chmod 600 mailcow.conf_backup
+        ;;
+      *)
+        exit 1
       ;;
-    *)
-      exit 1
-    ;;
-  esac
+    esac
+  fi
 fi
 
 echo "Press enter to confirm the detected value '[value]' where applicable or enter a custom value."
 while [ -z "${MAILCOW_HOSTNAME}" ]; do
+  if [[ "${AUTO_CONFIG}" == "y" ]]; then
+    MAILCOW_HOSTNAME="${MAILCOW_HOSTNAME:-local.test}"
+    break
+  fi
   read -p "Mail server hostname (FQDN) - this is not your mail domain, but your mail servers hostname: " -e MAILCOW_HOSTNAME
   DOTS=${MAILCOW_HOSTNAME//[^.]};
   if [ ${#DOTS} -lt 1 ]; then
@@ -91,6 +110,10 @@ elif [ -a /etc/localtime ]; then
 fi
 
 while [ -z "${MAILCOW_TZ}" ]; do
+  if [[ "${AUTO_CONFIG}" == "y" ]]; then
+    MAILCOW_TZ="${MAILCOW_TZ:-${TZ:-America/Toronto}}"
+    break
+  fi
   if [ -z "${DETECTED_TZ}" ]; then
     read -p "Timezone: " -e MAILCOW_TZ
   else
@@ -149,7 +172,11 @@ if [[ ${SKIP_BRANCH} != y ]]; then
 elif [[ ${SKIP_BRANCH} == y ]]; then
   echo -e "\033[33mEnabled Dev Mode.\033[0m"
   echo -e "\033[33mNot checking out a different branch!\033[0m"
-  MAILCOW_BRANCH=$(git rev-parse --short $(git rev-parse @{upstream}))
+  if [[ "${AUTO_CONFIG}" == "y" ]]; then
+    MAILCOW_BRANCH="${MAILCOW_BRANCH:-main}"
+  else
+    MAILCOW_BRANCH=$(git rev-parse --short $(git rev-parse @{upstream}))
+  fi
 
 else
   echo -e "\033[31mCould not determine branch input..."
@@ -161,7 +188,11 @@ if [ ! -z "${MAILCOW_BRANCH}" ]; then
   git_branch=${MAILCOW_BRANCH}
 fi
 
-configure_ipv6
+if [[ "${AUTO_CONFIG}" == "y" ]]; then
+  IPV6_BOOL="${ENABLE_IPV6:-false}"
+else
+  configure_ipv6
+fi
 
 [ ! -f ./data/conf/rspamd/override.d/worker-controller-password.inc ] && echo '# Placeholder' > ./data/conf/rspamd/override.d/worker-controller-password.inc
 
@@ -452,41 +483,39 @@ openssl req -x509 -newkey rsa:4096 -keyout data/assets/ssl-example/key.pem -out 
 echo "Copying snake-oil certificate..."
 cp -n -d data/assets/ssl-example/*.pem data/assets/ssl/
 
-# Set app_info.inc.php
-case ${git_branch} in
-  master)
-    mailcow_git_version=$(git describe --tags `git rev-list --tags --max-count=1`)
-    ;;
-  nightly)
-    mailcow_git_version=$(git rev-parse --short $(git rev-parse @{upstream}))
-    mailcow_last_git_version=""
-    ;;
-  legacy)
-    mailcow_git_version=$(git rev-parse --short $(git rev-parse @{upstream}))
-    mailcow_last_git_version=""
-    ;;
-  *)
-    mailcow_git_version=$(git rev-parse --short HEAD)
-    mailcow_last_git_version=""
-    ;;
-esac
-# if [ ${git_branch} == "master" ]; then
-#   mailcow_git_version=$(git describe --tags `git rev-list --tags --max-count=1`)
-# elif [ ${git_branch} == "nightly" ]; then
-#   mailcow_git_version=$(git rev-parse --short $(git rev-parse @{upstream}))
-#   mailcow_last_git_version=""
-# else
-#   mailcow_git_version=$(git rev-parse --short HEAD)
-#   mailcow_last_git_version=""
-# fi
-
-if [[ $SKIP_BRANCH != "y" ]]; then
-mailcow_git_commit=$(git rev-parse origin/${git_branch})
-mailcow_git_commit_date=$(git log -1 --format=%ci @{upstream} )
+if [[ "${AUTO_CONFIG}" == "y" ]]; then
+  mailcow_git_version="${MAILCOW_GIT_VERSION:-bootstrap}"
+  mailcow_last_git_version=""
+  mailcow_git_commit=""
+  mailcow_git_commit_date=""
 else
-mailcow_git_commit=$(git rev-parse ${git_branch})
-mailcow_git_commit_date=$(git log -1 --format=%ci @{upstream} )
-git_branch=$(git rev-parse --abbrev-ref HEAD)
+  # Set app_info.inc.php
+  case ${git_branch} in
+    master)
+      mailcow_git_version=$(git describe --tags `git rev-list --tags --max-count=1`)
+      ;;
+    nightly)
+      mailcow_git_version=$(git rev-parse --short $(git rev-parse @{upstream}))
+      mailcow_last_git_version=""
+      ;;
+    legacy)
+      mailcow_git_version=$(git rev-parse --short $(git rev-parse @{upstream}))
+      mailcow_last_git_version=""
+      ;;
+    *)
+      mailcow_git_version=$(git rev-parse --short HEAD)
+      mailcow_last_git_version=""
+      ;;
+  esac
+
+  if [[ $SKIP_BRANCH != "y" ]]; then
+  mailcow_git_commit=$(git rev-parse origin/${git_branch})
+  mailcow_git_commit_date=$(git log -1 --format=%ci @{upstream} )
+  else
+  mailcow_git_commit=$(git rev-parse ${git_branch})
+  mailcow_git_commit_date=$(git log -1 --format=%ci @{upstream} )
+  git_branch=$(git rev-parse --abbrev-ref HEAD)
+  fi
 fi
 
 if [ $? -eq 0 ]; then

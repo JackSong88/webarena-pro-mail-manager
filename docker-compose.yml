@@ -4,11 +4,17 @@ services:
 
     mailcow-local-seed:
       image: ghcr.io/mailcow/acme:1.94
-      user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
       entrypoint: ["/bin/bash", "/bootstrap/bootstrap-mailcow.sh"]
       environment:
         - MAILCOW_BOOTSTRAP_MODE=local-seed
         - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-local.test}
+        - TZ=${TZ:-America/Toronto}
+        - DOCKER_COMPOSE_VERSION=${DOCKER_COMPOSE_VERSION:-native}
+        - ENABLE_IPV6=${ENABLE_IPV6:-false}
+        - SKIP_CLAMD=${SKIP_CLAMD:-n}
+        - LOCAL_UID=${LOCAL_UID:-1000}
+        - LOCAL_GID=${LOCAL_GID:-1000}
+      network_mode: "none"
       restart: "no"
       volumes:
         - ./:/workspace/repo:Z
@@ -25,6 +31,9 @@ services:
         - MAILCOW_BOOTSTRAP_BACKUP=${MAILCOW_BOOTSTRAP_BACKUP:-mailcow-2026-01-14-19-30-31}
         - MAILCOW_BOOTSTRAP_FORCE=${MAILCOW_BOOTSTRAP_FORCE:-n}
         - MAILCOW_HOSTNAME=${MAILCOW_HOSTNAME:-local.test}
+        - LOCAL_UID=${LOCAL_UID:-1000}
+        - LOCAL_GID=${LOCAL_GID:-1000}
+      network_mode: "none"
       restart: "no"
       volumes:
         - ./:/workspace/repo:Z
@@ -219,7 +228,7 @@ services:
         - API_KEY_READ_ONLY=${API_KEY_READ_ONLY:-invalid}
         - API_ALLOW_FROM=${API_ALLOW_FROM:-invalid}
         - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
-        - SKIP_FTS=${SKIP_FTS:-y}
+        - SKIP_FTS=${SKIP_FTS:-n}
         - SKIP_CLAMD=${SKIP_CLAMD:-n}
         - SKIP_OLEFY=${SKIP_OLEFY:-n}
         - SKIP_SOGO=${SKIP_SOGO:-n}
@@ -338,10 +347,10 @@ services:
         - ALLOW_ADMIN_EMAIL_LOGIN=${ALLOW_ADMIN_EMAIL_LOGIN:-n}
         - MAILDIR_GC_TIME=${MAILDIR_GC_TIME:-7200}
         - ACL_ANYONE=${ACL_ANYONE:-disallow}
-        - SKIP_FTS=${SKIP_FTS:-y}
-        - FTS_HEAP=${FTS_HEAP:-512}
-        - FTS_PROCS=${FTS_PROCS:-3}
-        - MAILDIR_SUB=${MAILDIR_SUB:-}
+        - SKIP_FTS=${SKIP_FTS:-n}
+        - FTS_HEAP=${FTS_HEAP:-128}
+        - FTS_PROCS=${FTS_PROCS:-1}
+        - MAILDIR_SUB=${MAILDIR_SUB:-Maildir}
         - MASTER=${MASTER:-y}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
         - REDIS_SLAVEOF_PORT=${REDIS_SLAVEOF_PORT:-}
@@ -478,7 +487,7 @@ services:
         - TZ=${TZ:-America/Toronto}
         - SKIP_SOGO=${SKIP_SOGO:-n}
         - SKIP_RSPAMD=${SKIP_RSPAMD:-n}
-        - ENABLE_IPV6=${ENABLE_IPV6:-true}
+        - ENABLE_IPV6=${ENABLE_IPV6:-false}
         - HTTP_REDIRECT=${HTTP_REDIRECT:-n}
         - PHPFPMHOST=${PHPFPMHOST:-}
         - SOGOHOST=${SOGOHOST:-}
@@ -526,7 +535,7 @@ services:
         - DBNAME=${DBNAME:-mailcow}
         - DBUSER=${DBUSER:-mailcow}
         - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
-        - SKIP_LETS_ENCRYPT=${SKIP_LETS_ENCRYPT:-n}
+        - SKIP_LETS_ENCRYPT=${SKIP_LETS_ENCRYPT:-y}
         - COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-mailcowdockerized}
         - DIRECTORY_URL=${DIRECTORY_URL:-}
         - ENABLE_SSL_SNI=${ENABLE_SSL_SNI:-n}
@@ -597,9 +606,9 @@ services:
         - DBUSER=${DBUSER:-mailcow}
         - DBPASS=${DBPASS:-umGXFsQxPyXHGcpJAnRVx8YAby2Y}
         - DBROOT=${DBROOT:-0aONp8KOnDQJ1kSk2nqL2qUbHMF9}
-        - USE_WATCHDOG=${USE_WATCHDOG:-n}
+        - USE_WATCHDOG=${USE_WATCHDOG:-y}
         - WATCHDOG_NOTIFY_EMAIL=${WATCHDOG_NOTIFY_EMAIL:-}
-        - WATCHDOG_NOTIFY_BAN=${WATCHDOG_NOTIFY_BAN:-y}
+        - WATCHDOG_NOTIFY_BAN=${WATCHDOG_NOTIFY_BAN:-n}
         - WATCHDOG_NOTIFY_START=${WATCHDOG_NOTIFY_START:-y}
         - WATCHDOG_SUBJECT=${WATCHDOG_SUBJECT:-Watchdog ALERT}
         - WATCHDOG_NOTIFY_WEBHOOK=${WATCHDOG_NOTIFY_WEBHOOK:-}
@@ -614,7 +623,7 @@ services:
         - CHECK_UNBOUND=${CHECK_UNBOUND:-1}
         - SKIP_CLAMD=${SKIP_CLAMD:-n}
         - SKIP_OLEFY=${SKIP_OLEFY:-n}
-        - SKIP_LETS_ENCRYPT=${SKIP_LETS_ENCRYPT:-n}
+        - SKIP_LETS_ENCRYPT=${SKIP_LETS_ENCRYPT:-y}
         - SKIP_SOGO=${SKIP_SOGO:-n}
         - HTTPS_PORT=${HTTPS_PORT:-443}
         - REDIS_SLAVEOF_IP=${REDIS_SLAVEOF_IP:-}
@@ -716,7 +725,7 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.name: br-mailcow
-    enable_ipv6: ${ENABLE_IPV6:-true}
+    enable_ipv6: ${ENABLE_IPV6:-false}
     ipam:
       driver: default
       config:

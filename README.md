@@ -1,8 +1,11 @@
 # Mailcow - Gmail for WebArena-pro 
 
-This repository now includes the mailcow-compatible compose setup and an automatic bootstrap restore step. You no longer need a separate `mailcow-dockerized` checkout, `./generate_config.sh`, or the interactive `backup_and_restore.sh` flow.
+This repository now automates the original mailcow setup flow on first boot. A fresh `docker compose up -d` will:
+- run `./generate_config.sh --dev` automatically to generate the local mailcow config/certs
+- replace the generated config with the bundled backup-compatible `mailcow.conf`
+- run `helper-scripts/backup_and_restore.sh restore all` automatically against the bundled backup snapshot
 
-The upstream version drift issue is handled here by keeping this repo pinned to a restore-compatible mailcow snapshot and restoring the seeded mailbox backup automatically on first boot.
+That means you no longer need a separate `mailcow-dockerized` checkout or the old manual prompt-driven restore process.
 
 ### 1) Clone this repository
 ```
@@ -21,17 +24,17 @@ sudo sh -c 'echo "127.0.0.1 local.test" >> /etc/hosts'
 docker compose up -d
 ```
 
-On the first `up`, the one-shot bootstrap services automatically:
-- generates local `.env` and `mailcow.conf` files from the tracked `.env.example` template if they are missing
-- generates generic local self-signed TLS files used by mailcow when they are missing
-- restores the pinned backup snapshot from `MAILCOW_BOOTSTRAP_BACKUP`
-- populates the MariaDB, Redis, Postfix, Rspamd, vmail, and crypt volumes before the main services start
+On the first `up`, the one-shot bootstrap services automatically replay the old README steps:
+- `mailcow-local-seed` runs `generate_config.sh` non-interactively
+- the bundled backup `mailcow.conf` is applied
+- `mailcow-bootstrap` runs `helper-scripts/backup_and_restore.sh restore all` in automated mode
+- MariaDB, Redis, Postfix, Rspamd, vmail, and crypt data are restored before the main services start
 
-`mailcow-local-seed` writes the local repo files as your user, and `mailcow-bootstrap` restores the Docker volumes.
+The generated `.env` is a symlink to `mailcow.conf`, just like the original manual mailcow setup.
 
 The generated `.env`, `mailcow.conf`, TLS files, backup `mailcow.conf` snapshots, and the Dovecot/Postfix runtime SQL credential files are local-only artifacts and are not meant to be tracked in git.
 
-The old manual `generate_config.sh`, backup selection prompts, and `sudo chown -R "$USER:$USER" .` workaround are no longer part of setup.
+The old manual `generate_config.sh`, backup selection prompts, and `sudo chown -R "$USER:$USER" .` workaround are no longer needed.
 
 If you want to inspect that bootstrap step:
 ```

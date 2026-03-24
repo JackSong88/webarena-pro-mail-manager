@@ -54,6 +54,10 @@ COMPOSE_FILE=${SCRIPT_DIR}/../docker-compose.yml
 ENV_FILE=${SCRIPT_DIR}/../.env
 THREADS=$(echo ${THREADS:-1})
 ARCH=$(uname -m)
+AUTOMATED_RESTORE="${MAILCOW_AUTOMATED_RESTORE:-n}"
+DIRECT_RESTORE="${MAILCOW_RESTORE_DIRECT:-n}"
+RESTORE_OWNER_UID="${LOCAL_UID:-1000}"
+RESTORE_OWNER_GID="${LOCAL_GID:-1000}"
 
 if ! [[ "${THREADS}" =~ ^[1-9][0-9]?$ ]] ; then
   echo "Thread input is not a number!"
@@ -86,10 +90,106 @@ else
   CMPS_PRJ=$(echo ${COMPOSE_PROJECT_NAME} | tr -cd "[0-9A-Za-z-_]")
 fi
 
-if grep --help 2>&1 | head -n 1 | grep -q -i "busybox"; then
+if [[ "${DIRECT_RESTORE}" != "y" && "${AUTOMATED_RESTORE}" != "y" ]] && grep --help 2>&1 | head -n 1 | grep -q -i "busybox"; then
   >&2 echo -e "\e[31mBusyBox grep detected on local system, please install GNU grep\e[0m"
   exit 1
 fi
+
+direct_clear_dir() {
+  local target_dir="${1}"
+  mkdir -p "${target_dir}"
+  find "${target_dir}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+}
+
+direct_restore_archive() {
+  local archive_name="${1}"
+  local target_dir="${2}"
+  local label="${3}"
+
+  if [[ ! -f "${RESTORE_LOCATION}/${archive_name}" ]]; then
+    echo "Skipping ${label}: ${archive_name} is missing from ${RESTORE_LOCATION}."
+    return 0
+  fi
+
+  echo "Directly restoring ${label} from ${archive_name}..."
+  direct_clear_dir "${target_dir}"
+  tar -xzf "${RESTORE_LOCATION}/${archive_name}" --numeric-owner --strip-components=1 -C "${target_dir}"
+}
+
+direct_clear_maildir_indexes() {
+  local vmail_dir="${1}"
+  find "${vmail_dir}" -type f \
+    \( \
+      -name 'dovecot.index*' -o \
+      -name 'dovecot.mailbox.log*' -o \
+      -name 'dovecot-uidlist' \
+    \) -delete 2>/dev/null || true
+}
+
+apply_restore_mailcow_conf() {
+  local restore_conf="${1}/mailcow.conf"
+
+  if [[ ! -f "${restore_conf}" ]]; then
+    return 0
+  fi
+
+  cp "${restore_conf}" "${SCRIPT_DIR}/../mailcow.conf"
+  chmod 600 "${SCRIPT_DIR}/../mailcow.conf" 2>/dev/null || true
+  chown "${RESTORE_OWNER_UID}:${RESTORE_OWNER_GID}" "${SCRIPT_DIR}/../mailcow.conf" 2>/dev/null || true
+  ln -sfn mailcow.conf "${SCRIPT_DIR}/../.env"
+  chown -h "${RESTORE_OWNER_UID}:${RESTORE_OWNER_GID}" "${SCRIPT_DIR}/../.env" 2>/dev/null || true
+}
+
+direct_restore_dataset() {
+  local dataset="${1}"
+  local backup_arch=""
+
+  case "${dataset}" in
+    all)
+      apply_restore_mailcow_conf "${RESTORE_LOCATION}"
+      direct_restore_dataset mysql
+      direct_restore_dataset vmail
+      direct_restore_dataset crypt
+      direct_restore_dataset postfix
+      direct_restore_dataset redis
+      direct_restore_dataset rspamd
+      ;;
+    vmail)
+      direct_restore_archive "backup_vmail.tar.gz" "${MAILCOW_DIRECT_TARGET_VMAIL:-/bootstrap/vmail}" "Mail directory (/var/vmail)"
+      direct_clear_maildir_indexes "${MAILCOW_DIRECT_TARGET_VMAIL:-/bootstrap/vmail}"
+      ;;
+    crypt)
+      direct_restore_archive "backup_crypt.tar.gz" "${MAILCOW_DIRECT_TARGET_CRYPT:-/bootstrap/crypt}" "Crypt data"
+      ;;
+    redis)
+      direct_restore_archive "backup_redis.tar.gz" "${MAILCOW_DIRECT_TARGET_REDIS:-/bootstrap/redis}" "Redis DB"
+      ;;
+    rspamd)
+      if [[ -f "${RESTORE_LOCATION}/.x86_64" || -f "${RESTORE_LOCATION}/.amd64" ]]; then
+        backup_arch="x86_64"
+      elif [[ -f "${RESTORE_LOCATION}/.aarch64" || -f "${RESTORE_LOCATION}/.arm64" ]]; then
+        backup_arch="aarch64"
+      fi
+
+      if [[ -n "${backup_arch}" && "${ARCH}" != "${backup_arch}" ]]; then
+        echo -e "\e[33mSkipping rspamd due to incompatible architecture (${backup_arch} backup on ${ARCH} host).\e[0m"
+      else
+        direct_restore_archive "backup_rspamd.tar.gz" "${MAILCOW_DIRECT_TARGET_RSPAMD:-/bootstrap/rspamd}" "Rspamd data"
+      fi
+      ;;
+    postfix)
+      direct_restore_archive "backup_postfix.tar.gz" "${MAILCOW_DIRECT_TARGET_POSTFIX:-/bootstrap/postfix}" "Postfix data"
+      ;;
+    mysql|mariadb)
+      apply_restore_mailcow_conf "${RESTORE_LOCATION}"
+      direct_restore_archive "backup_mariadb.tar.gz" "${MAILCOW_DIRECT_TARGET_MYSQL:-/bootstrap/mysql}" "MariaDB"
+      ;;
+    *)
+      echo "Unknown dataset ${dataset}"
+      return 1
+      ;;
+  esac
+}
 
 
 function backup() {
@@ -171,6 +271,16 @@ function backup() {
 }
 
 function restore() {
+  if [[ "${DIRECT_RESTORE}" == "y" ]]; then
+    RESTORE_LOCATION="${1}"
+    shift
+    while (( "$#" )); do
+      direct_restore_dataset "${1}"
+      shift
+    done
+    return 0
+  fi
+
   for bin in docker; do
   if [[ -z $(which ${bin}) ]]; then
     >&2 echo -e "\e[31mCannot find ${bin} in local PATH, exiting...\e[0m"
@@ -337,6 +447,26 @@ function restore() {
 if [[ ${1} == "backup" ]]; then
   backup ${@,,}
 elif [[ ${1} == "restore" ]]; then
+  if [[ "${AUTOMATED_RESTORE}" == "y" ]]; then
+    RESTORE_POINT="${MAILCOW_RESTORE_POINT:-}"
+    RESTORE_DATASET="${MAILCOW_RESTORE_DATASET:-all}"
+
+    if [[ -z "${RESTORE_POINT}" ]]; then
+      RESTORE_POINT=$(find "${BACKUP_LOCATION}"/mailcow-* -maxdepth 0 -type d 2>/dev/null | sort | tail -n 1)
+    elif [[ "${RESTORE_POINT}" != /* ]]; then
+      RESTORE_POINT="${BACKUP_LOCATION%/}/${RESTORE_POINT}"
+    fi
+
+    if [[ -z "${RESTORE_POINT}" || ! -d "${RESTORE_POINT}" ]]; then
+      echo "Could not determine restore point in ${BACKUP_LOCATION}"
+      exit 1
+    fi
+
+    echo "Restoring ${RESTORE_DATASET} from ${RESTORE_POINT}..."
+    restore "${RESTORE_POINT}" "${RESTORE_DATASET}"
+    exit $?
+  fi
+
   i=1
   declare -A FOLDER_SELECTION
   if [[ $(find ${BACKUP_LOCATION}/mailcow-* -maxdepth 1 -type d 2> /dev/null| wc -l) -lt 1 ]]; then
